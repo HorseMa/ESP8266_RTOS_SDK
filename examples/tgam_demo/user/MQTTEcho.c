@@ -49,8 +49,9 @@ static void mqtt_client_thread(void* pvParameters)
 
     char* address = MQTT_BROKER;
 
-    if ((rc = NetworkConnect(&network, address, MQTT_PORT)) != 0) {
+    while ((rc = NetworkConnect(&network, address, MQTT_PORT)) != 0) {
         printf("Return code from network connect is %d\n", rc);
+        vTaskDelay(1000 / portTICK_RATE_MS);  //send every 1 seconds
     }
 
 #if defined(MQTT_TASK)

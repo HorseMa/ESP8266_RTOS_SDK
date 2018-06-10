@@ -24,6 +24,10 @@
 
 #include "esp_common.h"
 #include "user_config.h"
+#include "gpio.h"
+#include "uart.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 /******************************************************************************
  * FunctionName : user_rf_cal_sector_set
@@ -99,6 +103,52 @@ void wifi_event_handler_cb(System_Event_t *event)
     }
 }
 
+void led_task(void  *pvParameters)
+{
+    u8 cnt=0;
+    while(1)
+    {
+        os_printf("led task\r\n");
+        cnt++;
+        switch ( cnt%2 )
+        {
+            case 0://R
+                GPIO_OUTPUT_SET(14, 0);
+                break;
+            case 1://G
+                GPIO_OUTPUT_SET(14, 1);
+                break;
+        }
+        vTaskDelay(1000 / portTICK_RATE_MS);  //send every 1 seconds
+    }
+    os_printf("led task delete !!!!!!!!!!!!\r\n");
+    vTaskDelete(NULL);
+}
+
+void user_gpio_init(void)
+{
+    //引脚功能设置
+    PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO4_U, FUNC_GPIO4); //TGAM_powerenable
+    PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTCK_U, FUNC_GPIO13); //float
+    PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTMS_U, FUNC_GPIO14); //LED
+    PIN_FUNC_SELECT(PERIPHS_IO_MUX_GPIO5_U, FUNC_GPIO5); //BUZZER
+
+    GPIO_OUTPUT_SET(4, 0);
+    GPIO_OUTPUT_SET(13, 0);
+    GPIO_OUTPUT_SET(14, 0);
+    GPIO_OUTPUT_SET(5, 0);
+}
+
+void TGAM_powerenable(void)
+{
+    GPIO_OUTPUT_SET(4, 1);
+}
+
+void TGAM_powerdisable(void)
+{
+    GPIO_OUTPUT_SET(4, 0);
+}
+
 /******************************************************************************
  * FunctionName : user_init
  * Description  : entry of user application, init user function here
@@ -107,6 +157,10 @@ void wifi_event_handler_cb(System_Event_t *event)
 *******************************************************************************/
 void user_init(void)
 {
+    uart_init_new();
+    user_gpio_init();
+    TGAM_powerenable();
+    xTaskCreate(led_task,  "led_task", 256 * 2,    NULL,   2,  NULL);
     os_printf("SDK version:%s %d\n", system_get_sdk_version(), system_get_free_heap_size());
     wifi_set_opmode(STATION_MODE);
 
@@ -116,7 +170,7 @@ void user_init(void)
     sprintf(config.password, PASSWORD);
     wifi_station_set_config(&config);
 
-    wifi_set_event_handler_cb(wifi_event_handler_cb); 
+    wifi_set_event_handler_cb(wifi_event_handler_cb);
 
     wifi_station_connect();
 }

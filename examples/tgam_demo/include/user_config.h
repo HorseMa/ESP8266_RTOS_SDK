@@ -9,10 +9,10 @@
  * without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
  * and/or sell copies of the Software, and to permit persons to whom the Software is furnished
  * to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in all copies or
  * substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
  * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
@@ -25,8 +25,8 @@
 #ifndef __USER_CONFIG_H__
 #define __USER_CONFIG_H__
 
-#define SSID         "espressif"        /* Wi-Fi SSID */
-#define PASSWORD     "1234567890"     /* Wi-Fi Password */
+#define SSID         "1802"        /* Wi-Fi SSID */
+#define PASSWORD     "18021802"     /* Wi-Fi Password */
 
 #define MQTT_BROKER  "iot.eclipse.org"  /* MQTT Broker Address*/
 #define MQTT_PORT    1883             /* MQTT Port*/
