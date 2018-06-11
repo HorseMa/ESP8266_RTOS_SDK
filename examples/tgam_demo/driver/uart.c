@@ -148,17 +148,101 @@ uart_config(uint8 uart_no, UartDevice *uart)
     SET_PERI_REG_MASK(UART_INT_ENA(uart_no), UART_RXFIFO_FULL_INT_ENA);
 }
 #endif
+typedef enum{
+    enParseStateSync,
+    enParseStateLength,
+    enParseStatePayload,
+    enParseStateCheckSum
+}en_ParseState,*pen_ParseState;
+
+void hexdump(const unsigned char *buf, const int num)
+{
+    int i;
+    for(i = 0; i < num; i++)
+    {
+        printf("%02X ", buf[i]);
+        /*if ((i+1)%8 == 0)
+            printf("\n");*/
+    }
+    printf("\r\n");
+    return;
+}
+
+//字节流转换为十六进制字符串的另一种实现方式
+void Hex2Str( const char *sSrc,  char *sDest, int nSrcLen )
+{
+    int  i;
+    char szTmp[3];
+
+    for( i = 0; i < nSrcLen; i++ )
+    {
+        sprintf( szTmp, "%02X", (unsigned char) sSrc[i] );
+        memcpy( &sDest[i * 2], szTmp, 2 );
+    }
+    //sDest[i * 2] = '\0';
+    return ;
+}
 
 LOCAL void
 uart_task(void *pvParameters)
 {
     os_event_t e;
-
+    static en_ParseState enParseState = enParseStateSync;
+    static u16 syncword = 0;
+    static u16 length = 0,index = 0;
+    static u8 payload[256] = {0};
+    static u32 checksum = 0,checksumtmp = 0;
     for (;;) {
         if (xQueueReceive(xQueueUart, (void *)&e, (portTickType)portMAX_DELAY)) {
             switch (e.event) {
                 case UART_EVENT_RX_CHAR:
-                    printf("%02X", e.param);
+                    //printf("%02X", e.param);
+                    switch(enParseState)
+                    {
+                        case enParseStateSync:
+                            syncword = syncword << 8;
+                            syncword = syncword | e.param;
+                            if(syncword == 0xAAAA)
+                            {
+                                enParseState = enParseStateLength;
+                            }
+                            break;
+                        case enParseStateLength:
+                            length = e.param;
+                            index = 0;
+                            enParseState = enParseStatePayload;
+                            break;
+                        case enParseStatePayload:
+                            payload[index ++] = e.param;
+                            if(index >= length)
+                            {
+                                enParseState = enParseStateCheckSum;
+                            }
+                            break;
+                        case enParseStateCheckSum:
+                            checksum = e.param;
+                            checksumtmp = 0;
+                            for(index = 0;index < length;index ++)
+                            {
+                                checksumtmp += payload[index];
+                            }
+                            checksumtmp = (checksumtmp ^ 0xFFFFFFFF) & 0xFF;
+                            if(checksum == checksumtmp)
+                            {
+                                hexdump(payload,length);
+                            }
+                            else
+                            {
+                                printf("Checksum error\r\n");
+                            }
+                            enParseState = enParseStateSync;
+                            syncword = 0;
+                            break;
+                        default:
+                            enParseState = enParseStateSync;
+                            syncword = 0;
+                            break;
+                    }
                     break;
 
                 default:
