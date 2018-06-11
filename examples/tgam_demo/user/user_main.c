@@ -103,6 +103,16 @@ void wifi_event_handler_cb(System_Event_t *event)
     }
 }
 
+void tgam_led_on(void)
+{
+    GPIO_OUTPUT_SET(14, 0);
+}
+
+void tgam_led_off(void)
+{
+    GPIO_OUTPUT_SET(14, 1);
+}
+
 void led_task(void  *pvParameters)
 {
     u8 cnt=0;
@@ -113,10 +123,10 @@ void led_task(void  *pvParameters)
         switch ( cnt%2 )
         {
             case 0://R
-                GPIO_OUTPUT_SET(14, 0);
+                tgam_led_on();
                 break;
             case 1://G
-                GPIO_OUTPUT_SET(14, 1);
+                tgam_led_off();
                 break;
         }
         vTaskDelay(1000 / portTICK_RATE_MS);  //send every 1 seconds
@@ -159,20 +169,14 @@ void buzzer_disable(void)
     GPIO_OUTPUT_SET(5, 0);
 }
 
-/******************************************************************************
- * FunctionName : user_init
- * Description  : entry of user application, init user function here
- * Parameters   : none
- * Returns      : none
-*******************************************************************************/
-void user_init(void)
+void fpm_wakup_cb_func(void)
 {
     uart_init_new();
+    os_printf("wakeup callback !!!!!!!!!\r\n");
     user_gpio_init();
     TGAM_powerenable();
     //buzzer_enable();
     xTaskCreate(led_task,  "led_task", 256,    NULL,   2,  NULL);
-    os_printf("SDK version:%s %d\n", system_get_sdk_version(), system_get_free_heap_size());
     wifi_set_opmode(STATION_MODE);
 
     struct station_config config;
@@ -184,4 +188,34 @@ void user_init(void)
     wifi_set_event_handler_cb(wifi_event_handler_cb);
 
     wifi_station_connect();
+    return;
+}
+
+void tgam_enter_sleep(void)
+{
+    os_printf("go sleep !!!!!!!!!\r\n");
+    tgam_led_off();
+    TGAM_powerdisable();
+    buzzer_disable();
+    wifi_station_disconnect();
+    wifi_set_opmode(NULL_MODE);
+    wifi_fpm_set_sleep_type(LIGHT_SLEEP_T);
+    wifi_fpm_open();
+    PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDI_U, FUNC_GPIO12); //key
+    gpio_pin_wakeup_enable(12,GPIO_PIN_INTR_LOLEVEL);
+    wifi_fpm_set_wakeup_cb(fpm_wakup_cb_func);     // Set wakeup callback
+    wifi_fpm_do_sleep(0xFFFFFFF);
+}
+
+/******************************************************************************
+ * FunctionName : user_init
+ * Description  : entry of user application, init user function here
+ * Parameters   : none
+ * Returns      : none
+*******************************************************************************/
+void user_init(void)
+{
+    uart_init_new();
+    os_printf("SDK version:%s %d\n", system_get_sdk_version(), system_get_free_heap_size());
+    tgam_enter_sleep();
 }
