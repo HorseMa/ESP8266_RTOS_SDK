@@ -108,7 +108,7 @@ void led_task(void  *pvParameters)
     u8 cnt=0;
     while(1)
     {
-        os_printf("led task\r\n");
+        //os_printf("led task\r\n");
         cnt++;
         switch ( cnt%2 )
         {
@@ -149,6 +149,16 @@ void TGAM_powerdisable(void)
     GPIO_OUTPUT_SET(4, 0);
 }
 
+void buzzer_enable(void)
+{
+    GPIO_OUTPUT_SET(5, 1);
+}
+
+void buzzer_disable(void)
+{
+    GPIO_OUTPUT_SET(5, 0);
+}
+
 /******************************************************************************
  * FunctionName : user_init
  * Description  : entry of user application, init user function here
@@ -160,7 +170,8 @@ void user_init(void)
     uart_init_new();
     user_gpio_init();
     TGAM_powerenable();
-    xTaskCreate(led_task,  "led_task", 256 * 2,    NULL,   2,  NULL);
+    //buzzer_enable();
+    xTaskCreate(led_task,  "led_task", 256,    NULL,   2,  NULL);
     os_printf("SDK version:%s %d\n", system_get_sdk_version(), system_get_free_heap_size());
     wifi_set_opmode(STATION_MODE);
 
