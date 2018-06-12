@@ -29,6 +29,7 @@
 #include "freertos/queue.h"
 
 #include "uart.h"
+#include "ThinkGearStreamParser.h"
 
 enum {
     UART_EVENT_RX_CHAR,
@@ -148,12 +149,6 @@ uart_config(uint8 uart_no, UartDevice *uart)
     SET_PERI_REG_MASK(UART_INT_ENA(uart_no), UART_RXFIFO_FULL_INT_ENA);
 }
 #endif
-typedef enum{
-    enParseStateSync,
-    enParseStateLength,
-    enParseStatePayload,
-    enParseStateCheckSum
-}en_ParseState,*pen_ParseState;
 
 void hexdump(const unsigned char *buf, const int num)
 {
@@ -182,71 +177,52 @@ void Hex2Str( const char *sSrc,  char *sDest, int nSrcLen )
     //sDest[i * 2] = '\0';
     return ;
 }
+void jsonMQTTDataPublish(unsigned char code,const unsigned char *value);
+void printBlinks( unsigned char extendedCodeLevel,
+                  unsigned char code,
+                  unsigned char valueLength,
+                  const unsigned char *value,
+                  void *customData ) {
+    if ( extendedCodeLevel == 0 ) {
+        jsonMQTTDataPublish(code,value);
+        /*switch ( code ) {
+            case ( 0x16 ):
+                printf( "BLINK: %d\n", value[0] & 0xFF );
+                fflush(stdout);
+                break;
+            case ( 0x05 ):
+                printf( "MEDITATION: %d\n", value[0] & 0xFF );
+                fflush(stdout);
+                break;
+            case ( 0x02 ):
+                printf( "POOR_SIGNAL: %d\n", value[0] & 0xFF );
+                fflush(stdout);
+                break;
+            case ( 0x80 ):
+                printf( "RAW: %d\n", (short) (( value[0] << 8 ) | value[1]) );
+                fflush(stdout);
+                break;
+            default:
+                break;
+        }*/
+    }
+}
 
 LOCAL void
 uart_task(void *pvParameters)
 {
     os_event_t e;
-    static en_ParseState enParseState = enParseStateSync;
-    static u16 syncword = 0;
-    static u16 length = 0,index = 0;
-    static u8 payload[256] = {0};
-    static u32 checksum = 0,checksumtmp = 0;
+    ThinkGearStreamParser parserRaw,parserPackets;
+    THINKGEAR_initParser( &parserRaw, PARSER_TYPE_2BYTERAW,
+                            printBlinks, NULL );
+    THINKGEAR_initParser( &parserPackets, PARSER_TYPE_PACKETS,
+                            printBlinks, NULL );
     for (;;) {
         if (xQueueReceive(xQueueUart, (void *)&e, (portTickType)portMAX_DELAY)) {
-            switch (e.event) {
-                case UART_EVENT_RX_CHAR:
-                    //printf("%02X", e.param);
-                    switch(enParseState)
-                    {
-                        case enParseStateSync:
-                            syncword = syncword << 8;
-                            syncword = syncword | e.param;
-                            if(syncword == 0xAAAA)
-                            {
-                                enParseState = enParseStateLength;
-                            }
-                            break;
-                        case enParseStateLength:
-                            length = e.param;
-                            index = 0;
-                            enParseState = enParseStatePayload;
-                            break;
-                        case enParseStatePayload:
-                            payload[index ++] = e.param;
-                            if(index >= length)
-                            {
-                                enParseState = enParseStateCheckSum;
-                            }
-                            break;
-                        case enParseStateCheckSum:
-                            checksum = e.param;
-                            checksumtmp = 0;
-                            for(index = 0;index < length;index ++)
-                            {
-                                checksumtmp += payload[index];
-                            }
-                            checksumtmp = (checksumtmp ^ 0xFFFFFFFF) & 0xFF;
-                            if(checksum == checksumtmp)
-                            {
-                                hexdump(payload,length);
-                            }
-                            else
-                            {
-                                printf("Checksum error\r\n");
-                            }
-                            enParseState = enParseStateSync;
-                            syncword = 0;
-                            break;
-                        default:
-                            enParseState = enParseStateSync;
-                            syncword = 0;
-                            break;
-                    }
-                    break;
-
-                default:
-                    break;
+            if(e.event == UART_EVENT_RX_CHAR)
+            {
+                THINKGEAR_parseByte( &parserRaw, e.param );
+                THINKGEAR_parseByte( &parserPackets, e.param );
             }
         }
     }

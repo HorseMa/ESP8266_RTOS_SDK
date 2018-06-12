@@ -22,6 +22,7 @@
 #include "mqtt/MQTTClient.h"
 
 #include "user_config.h"
+#include "json/cJSON.h"
 
 #define MQTT_CLIENT_THREAD_NAME         "mqtt_client_thread"
 #define MQTT_CLIENT_THREAD_STACK_WORDS  2048
@@ -29,6 +30,30 @@
 
 LOCAL xTaskHandle mqttc_client_handle;
 
+void jsonMQTTDataPublish(unsigned char code,const unsigned char *value)
+{
+    cJSON * root =  cJSON_CreateObject();
+
+    cJSON_AddNumberToObject(root, "ChipID", (system_get_chip_id()));//根节点下添加
+    switch ( code ) {
+        case ( 0x16 ):
+            cJSON_AddNumberToObject(root, "Blink", (value[0] & 0xFF));
+            break;
+        case ( 0x05 ):
+            cJSON_AddNumberToObject(root, "Meditation", (value[0] & 0xFF));
+            break;
+        case ( 0x02 ):
+            cJSON_AddNumberToObject(root, "Poor_Signal", (value[0] & 0xFF));
+            break;
+        case ( 0x80 ):
+            cJSON_AddNumberToObject(root, "Raw", ((short) (( value[0] << 8 ) | value[1])));
+            break;
+        default:
+            break;
+    }
+
+    printf("%s\r\n", cJSON_Print(root));
+}
 static void messageArrived(MessageData* data)
 {
     printf("Message arrived: %s\n", data->message->payload);

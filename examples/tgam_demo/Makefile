@@ -69,6 +69,9 @@ LINKFLAGS_eagle.app.v6 =    \
     -lmbedtls               \
     -lopenssl               \
     -lmqtt                  \
+    -lmirom                 \
+    -lcirom                 \
+    -ljson                  \
     -lwpa                   \
     $(DEP_LIBS_eagle.app.v6)\
     -Wl,--end-group
