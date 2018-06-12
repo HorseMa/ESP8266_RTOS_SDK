@@ -177,51 +177,24 @@ void Hex2Str( const char *sSrc,  char *sDest, int nSrcLen )
     //sDest[i * 2] = '\0';
     return ;
 }
-void jsonMQTTDataPublish(unsigned char code,const unsigned char *value);
-void printBlinks( unsigned char extendedCodeLevel,
+void jsonMQTTDataPublish( unsigned char extendedCodeLevel,
                   unsigned char code,
                   unsigned char valueLength,
                   const unsigned char *value,
-                  void *customData ) {
-    if ( extendedCodeLevel == 0 ) {
-        jsonMQTTDataPublish(code,value);
-        /*switch ( code ) {
-            case ( 0x16 ):
-                printf( "BLINK: %d\n", value[0] & 0xFF );
-                fflush(stdout);
-                break;
-            case ( 0x05 ):
-                printf( "MEDITATION: %d\n", value[0] & 0xFF );
-                fflush(stdout);
-                break;
-            case ( 0x02 ):
-                printf( "POOR_SIGNAL: %d\n", value[0] & 0xFF );
-                fflush(stdout);
-                break;
-            case ( 0x80 ):
-                printf( "RAW: %d\n", (short) (( value[0] << 8 ) | value[1]) );
-                fflush(stdout);
-                break;
-            default:
-                break;
-        }*/
-    }
-}
+                  void *customData ) ;
 
 LOCAL void
 uart_task(void *pvParameters)
 {
     os_event_t e;
-    ThinkGearStreamParser parserRaw,parserPackets;
-    THINKGEAR_initParser( &parserRaw, PARSER_TYPE_2BYTERAW,
-                            printBlinks, NULL );
+    ThinkGearStreamParser parserPackets;
+
     THINKGEAR_initParser( &parserPackets, PARSER_TYPE_PACKETS,
-                            printBlinks, NULL );
+                            jsonMQTTDataPublish, NULL );
     for (;;) {
         if (xQueueReceive(xQueueUart, (void *)&e, (portTickType)portMAX_DELAY)) {
             if(e.event == UART_EVENT_RX_CHAR)
             {
-                THINKGEAR_parseByte( &parserRaw, e.param );
                 THINKGEAR_parseByte( &parserPackets, e.param );
             }
         }

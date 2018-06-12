@@ -282,8 +282,8 @@ void user_init(void)
 {
     uart_init_new();
     button_enable();
-    xTaskCreate(led_task,  "led_task", 256,    NULL,   2,  NULL);
-    xTaskCreate(key_task,  "key_task", 256,    NULL,   2,  &key_handler_task_handle);
+    xTaskCreate(led_task,  "led_task", 256 * 2,    NULL,   2,  NULL);
+    xTaskCreate(key_task,  "key_task", 256 * 2,    NULL,   2,  &key_handler_task_handle);
     os_printf("SDK version:%s %d\n", system_get_sdk_version(), system_get_free_heap_size());
     tgam_enter_sleep();
 }

@@ -28,7 +28,7 @@
 #define SSID         "1802"        /* Wi-Fi SSID */
 #define PASSWORD     "18021802"     /* Wi-Fi Password */
 
-#define MQTT_BROKER  "iot.eclipse.org"  /* MQTT Broker Address*/
+#define MQTT_BROKER  "101.132.97.241"  /* MQTT Broker Address*/
 #define MQTT_PORT    1883             /* MQTT Port*/
 
 #endif
