@@ -27,6 +27,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "json/cJSON.h"
+#include "mqtt/MQTTClient.h"
 
 #include "uart.h"
 #include "ThinkGearStreamParser.h"
@@ -43,6 +45,7 @@ typedef struct _os_event_ {
 
 xTaskHandle xUartTaskHandle;
 xQueueHandle xQueueUart;
+extern xTaskHandle mqttc_client_handle;
 
 LOCAL STATUS
 uart_tx_one_char(uint8 uart, uint8 TxChar)
@@ -149,7 +152,12 @@ uart_config(uint8 uart_no, UartDevice *uart)
     SET_PERI_REG_MASK(UART_INT_ENA(uart_no), UART_RXFIFO_FULL_INT_ENA);
 }
 #endif
-
+typedef enum{
+    enParseStateSync,
+    enParseStateLength,
+    enParseStatePayload,
+    enParseStateCheckSum
+}en_ParseState,*pen_ParseState;
 void hexdump(const unsigned char *buf, const int num)
 {
     int i;
@@ -182,23 +190,145 @@ void jsonMQTTDataPublish( unsigned char extendedCodeLevel,
                   unsigned char valueLength,
                   const unsigned char *value,
                   void *customData ) ;
-
+extern MQTTMessage message;
+extern u8 mqtt_payload[];
 LOCAL void
 uart_task(void *pvParameters)
 {
     os_event_t e;
-    ThinkGearStreamParser parserPackets;
-
-    THINKGEAR_initParser( &parserPackets, PARSER_TYPE_PACKETS,
-                            jsonMQTTDataPublish, NULL );
+    static en_ParseState enParseState = enParseStateSync;
+    static u16 syncword = 0;
+    static u16 length = 0,index = 0;
+    static u8 payload[256] = {0};
+    static u32 checksum = 0,checksumtmp = 0;
+    static cJSON *root = NULL,*rawarray = NULL;
+    static rawcnt = 0;
     for (;;) {
         if (xQueueReceive(xQueueUart, (void *)&e, (portTickType)portMAX_DELAY)) {
-            if(e.event == UART_EVENT_RX_CHAR)
-            {
-                THINKGEAR_parseByte( &parserPackets, e.param );
+            switch (e.event) {
+                case UART_EVENT_RX_CHAR:
+                    //printf("%02X", e.param);
+                    //printf("%02X", e.param);
+                    switch(enParseState)
+                    {
+                        case enParseStateSync:
+                            syncword = syncword << 8;
+                            syncword = syncword | e.param;
+                            if(syncword == 0xAAAA)
+                            {
+                                enParseState = enParseStateLength;
+                            }
+                            break;
+                        case enParseStateLength:
+                            length = e.param;
+                            index = 0;
+                            enParseState = enParseStatePayload;
+                            break;
+                        case enParseStatePayload:
+                            payload[index ++] = e.param;
+                            if(index >= length)
+                            {
+                                enParseState = enParseStateCheckSum;
+                            }
+                            break;
+                        case enParseStateCheckSum:
+                            checksum = e.param;
+                            checksumtmp = 0;
+                            for(index = 0;index < length;index ++)
+                            {
+                                checksumtmp += payload[index];
+                            }
+                            checksumtmp = (checksumtmp ^ 0xFFFFFFFF) & 0xFF;
+                            if(checksum == checksumtmp)
+                            {
+                                if (!root)
+                                {
+                                    root =  cJSON_CreateObject();
+                                    rawarray = cJSON_CreateArray();
+                                    //cJSON_AddItemToObject(root, "Raw Data", rawarray = cJSON_CreateArray());
+                                    printf("free heap size :%d\r\n", system_get_free_heap_size());
+                                }
+                                if(length == 0x20)
+                                {
+                                    if(payload[0] == 0x02)
+                                    {
+                                        cJSON_AddNumberToObject(root, "Poor_Signal", (payload[1] & 0xFF));
+                                    }
+                                    if((payload[2] == 0x83) && (payload[3] == 0x18))
+                                    {
+                                        cJSON_AddNumberToObject(root, "Delta", ((u32)payload[4] << 16) | ((u32)payload[5] << 8) | ((u32)payload[6] << 0));
+                                        cJSON_AddNumberToObject(root, "Theta", ((u32)payload[7] << 16) | ((u32)payload[8] << 8) | ((u32)payload[9] << 0));
+                                        cJSON_AddNumberToObject(root, "LowAlpha", ((u32)payload[10] << 16) | ((u32)payload[11] << 8) | ((u32)payload[12] << 0));
+                                        cJSON_AddNumberToObject(root, "HighAlpha", ((u32)payload[13] << 16) | ((u32)payload[14] << 8) | ((u32)payload[15] << 0));
+                                        cJSON_AddNumberToObject(root, "LowBeta", ((u32)payload[16] << 16) | ((u32)payload[17] << 8) | ((u32)payload[18] << 0));
+                                        cJSON_AddNumberToObject(root, "HighBeta", ((u32)payload[19] << 16) | ((u32)payload[20] << 8) | ((u32)payload[21] << 0));
+                                        cJSON_AddNumberToObject(root, "LowGamma", ((u32)payload[22] << 16) | ((u32)payload[23] << 8) | ((u32)payload[24] << 0));
+                                        cJSON_AddNumberToObject(root, "MiddleGamma", ((u32)payload[25] << 16) | ((u32)payload[26] << 8) | ((u32)payload[27] << 0));
+                                    }
+                                    if(payload[28] == 0x04)
+                                    {
+                                        cJSON_AddNumberToObject(root, "Attention", (payload[29] & 0xFF));
+                                    }
+                                    if(payload[30] == 0x05)
+                                    {
+                                        cJSON_AddNumberToObject(root, "Meditation", (payload[31] & 0xFF));
+                                    }
+                                    cJSON_AddItemToObject(root, "Raw Data", rawarray);
+                                    printf("free heap size :%d\r\n", system_get_free_heap_size());
+                                    printf("%s\r\n%d\r\n", cJSON_Print(root),rawcnt);
+                                    printf("free heap size :%d\r\n", system_get_free_heap_size());
+                                    message.qos = QOS0;
+                                    message.retained = 0;
+                                    memset(mqtt_payload,0,1024 * 2);
+                                    message.payload = mqtt_payload;
+                                    //strcpy(mqtt_payload, cJSON_Print(root));
+                                    message.payloadlen = strlen(mqtt_payload);
+                                    //printf("%s, %d\r\n",__func__,__LINE__);
+                                    //vTaskResume(mqttc_client_handle);
+                                    //cJSON_Delete(rawarray);
+                                    //printf("%s, %d\r\n",__func__,__LINE__);
+                                    cJSON_Delete(root);
+                                    //printf("%s, %d\r\n",__func__,__LINE__);
+                                    root = NULL;
+                                    rawcnt = 0;
+                                    rawarray = NULL;
+                                }
+                                else if(length == 0x04)
+                                {
+                                    if((payload[0] == 0x80) && (payload[1] == 0x02))
+                                    {
+                                        if(rawcnt % 2)
+                                        cJSON_AddItemToArray(rawarray,cJSON_CreateNumber(((short) (( payload[2] << 8 ) | payload[3]))));
+                                        rawcnt ++;
+                                    }
+                                    else
+                                    {
+                                        printf("format error\r\n");
+                                    }
+
+                                }
+                                else
+                                {
+                                    printf("format error\r\n");
+                                }
+                                //hexdump(payload,length);
+
+                            }
+                            else
+                            {
+                                printf("Checksum error\r\n");
+                            }
+                            enParseState = enParseStateSync;
+                            syncword = 0;
+                            break;
+                        default:
+                            enParseState = enParseStateSync;
+                            syncword = 0;
+                            break;
+                    }
+                }
             }
         }
-    }
 
     vTaskDelete(NULL);
 }
@@ -478,7 +608,7 @@ uart_init_new(void)
     UART_intr_handler_register(uart0_rx_intr_handler, NULL);
     ETS_UART_INTR_ENABLE();
 
-    xQueueUart = xQueueCreate(32, sizeof(os_event_t));
+    xQueueUart = xQueueCreate(32 * 10, sizeof(os_event_t));
     xTaskCreate(uart_task, (uint8 const *)"uTask", 512, NULL, tskIDLE_PRIORITY + 2, &xUartTaskHandle);
     /*
     UART_SetWordLength(UART0,UART_WordLength_8b);

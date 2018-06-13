@@ -159,7 +159,7 @@ void key_task(void  *pvParameters)
         os_printf("wakeup callback !!!!!!!!!\r\n");
         user_gpio_init();
         button_enable();
-        TGAM_powerenable();
+        TGAM_powerdisable();
         wifi_set_opmode(STATION_MODE);
 
         struct station_config config;
