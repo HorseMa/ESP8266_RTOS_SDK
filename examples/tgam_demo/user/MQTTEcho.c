@@ -23,14 +23,14 @@
 
 #include "user_config.h"
 #include "json/cJSON.h"
-//#include "freertos/semphr.h"
+#include "freertos/semphr.h"
 #include "ThinkGearStreamParser.h"
 
 #define MQTT_CLIENT_THREAD_NAME         "mqtt_client_thread"
 #define MQTT_CLIENT_THREAD_STACK_WORDS  2048
 #define MQTT_CLIENT_THREAD_PRIO         8
 
-//SemaphoreHandle_t MQTTpubSemaphore = NULL;
+xSemaphoreHandle MQTTpubSemaphore = NULL;
 MQTTMessage message;
 u8 mqtt_payload[1024 * 2];
 
@@ -105,7 +105,7 @@ static void mqtt_client_thread(void* pvParameters)
     printf("mqtt client thread starts\n");
     MQTTClient client;
     Network network;
-    unsigned char sendbuf[80], readbuf[80] = {0};
+    static unsigned char sendbuf[1024 * 2], readbuf[80] = {0};
     int rc = 0, count = 0;
     MQTTPacket_connectData connectData = MQTTPacket_connectData_initializer;
 
@@ -142,7 +142,7 @@ static void mqtt_client_thread(void* pvParameters)
         printf("MQTT Connected\n");
     }
 
-    if ((rc = MQTTSubscribe(&client, "Estack/TGAM/sub", QOS0, messageArrived)) != 0) {
+    if ((rc = MQTTSubscribe(&client, "Estack_TGAM", QOS0, messageArrived)) != 0) {
         TGAM_powerdisable();
         printf("Return code from MQTT subscribe is %d\n", rc);
     } else {
@@ -154,20 +154,20 @@ static void mqtt_client_thread(void* pvParameters)
     while (1) {
         /*message.qos = QOS0;
         message.retained = 0;
-        memset(payload,0,sizeof(payload));
-        message.payload = payload;
-        sprintf(payload, "hello");//cJSON_Print(root));
-        message.payloadlen = strlen(payload);*/
+        memset(mqtt_payload,0,1024 * 2);
+        message.payload = mqtt_payload;
+        sprintf(mqtt_payload, "hello");//cJSON_Print(root));
+        message.payloadlen = strlen(mqtt_payload);*/
         vTaskSuspend( mqttc_client_handle );
-        //xSemaphoreTake( MQTTpubSemaphore, portMAX_DELAY );
+        xSemaphoreTake( MQTTpubSemaphore, portMAX_DELAY );
         if ((rc = MQTTPublish(&client, "Estack/TGAM/pub", &message)) != 0) {
             TGAM_powerdisable();
             printf("Return code from MQTT publish is %d\n", rc);
         } else {
             printf("MQTT publish topic \"Estack/TGAM/pub\"\r\n");
         }
-        //xSemaphoreGive( MQTTpubSemaphore );
-        //vTaskDelay(2);  //send every 1 seconds
+        xSemaphoreGive( MQTTpubSemaphore );
+        //vTaskDelay(1000);  //send every 1 seconds
     }
 
     printf("mqtt_client_thread going to be deleted\n");
@@ -178,7 +178,7 @@ static void mqtt_client_thread(void* pvParameters)
 void user_conn_init(void)
 {
     int ret;
-    //MQTTpubSemaphore = xSemaphoreCreateMutex();
+    MQTTpubSemaphore = xSemaphoreCreateMutex();
     ret = xTaskCreate(mqtt_client_thread,
                       MQTT_CLIENT_THREAD_NAME,
                       MQTT_CLIENT_THREAD_STACK_WORDS,

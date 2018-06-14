@@ -29,7 +29,7 @@
 #include "freertos/queue.h"
 #include "json/cJSON.h"
 #include "mqtt/MQTTClient.h"
-
+#include "freertos/semphr.h"
 #include "uart.h"
 #include "ThinkGearStreamParser.h"
 
@@ -45,6 +45,8 @@ typedef struct _os_event_ {
 
 xTaskHandle xUartTaskHandle;
 xQueueHandle xQueueUart;
+extern xSemaphoreHandle MQTTpubSemaphore;
+
 extern xTaskHandle mqttc_client_handle;
 
 LOCAL STATUS
@@ -203,6 +205,7 @@ uart_task(void *pvParameters)
     static u32 checksum = 0,checksumtmp = 0;
     static cJSON *root = NULL,*rawarray = NULL;
     static rawcnt = 0;
+    static u8 *text;
     for (;;) {
         if (xQueueReceive(xQueueUart, (void *)&e, (portTickType)portMAX_DELAY)) {
             switch (e.event) {
@@ -244,8 +247,8 @@ uart_task(void *pvParameters)
                                 if (!root)
                                 {
                                     root =  cJSON_CreateObject();
-                                    rawarray = cJSON_CreateArray();
-                                    //cJSON_AddItemToObject(root, "Raw Data", rawarray = cJSON_CreateArray());
+                                    cJSON_AddNumberToObject(root, "Chip_ID", system_get_chip_id());
+                                    cJSON_AddItemToObject(root, "Raw Data", rawarray = cJSON_CreateArray());
                                     printf("free heap size :%d\r\n", system_get_free_heap_size());
                                 }
                                 if(length == 0x20)
@@ -273,22 +276,19 @@ uart_task(void *pvParameters)
                                     {
                                         cJSON_AddNumberToObject(root, "Meditation", (payload[31] & 0xFF));
                                     }
-                                    cJSON_AddItemToObject(root, "Raw Data", rawarray);
-                                    printf("free heap size :%d\r\n", system_get_free_heap_size());
-                                    printf("%s\r\n%d\r\n", cJSON_Print(root),rawcnt);
-                                    printf("free heap size :%d\r\n", system_get_free_heap_size());
+
+                                    xSemaphoreTake( MQTTpubSemaphore, portMAX_DELAY );
                                     message.qos = QOS0;
                                     message.retained = 0;
                                     memset(mqtt_payload,0,1024 * 2);
                                     message.payload = mqtt_payload;
-                                    //strcpy(mqtt_payload, cJSON_Print(root));
-                                    message.payloadlen = strlen(mqtt_payload);
-                                    //printf("%s, %d\r\n",__func__,__LINE__);
-                                    //vTaskResume(mqttc_client_handle);
-                                    //cJSON_Delete(rawarray);
-                                    //printf("%s, %d\r\n",__func__,__LINE__);
+                                    strcpy(mqtt_payload, text = cJSON_Print(root));
+                                    free(text);
                                     cJSON_Delete(root);
-                                    //printf("%s, %d\r\n",__func__,__LINE__);
+                                    message.payloadlen = strlen(mqtt_payload);
+                                    printf("%s, %d\r\n",mqtt_payload,rawcnt);
+                                    xSemaphoreGive( MQTTpubSemaphore );
+                                    vTaskResume(mqttc_client_handle);
                                     root = NULL;
                                     rawcnt = 0;
                                     rawarray = NULL;
@@ -298,7 +298,9 @@ uart_task(void *pvParameters)
                                     if((payload[0] == 0x80) && (payload[1] == 0x02))
                                     {
                                         if(rawcnt % 2)
-                                        cJSON_AddItemToArray(rawarray,cJSON_CreateNumber(((short) (( payload[2] << 8 ) | payload[3]))));
+                                        {
+                                            cJSON_AddItemToArray(rawarray,cJSON_CreateNumber(((short) (( payload[2] << 8 ) | payload[3]))));
+                                        }
                                         rawcnt ++;
                                     }
                                     else
